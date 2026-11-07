@@ -36,7 +36,9 @@ W, H, FPS = 1080, 1920, 30
 LEAD_IN, TAIL = 0.8, 2.2
 JESSICA = "cgSgspJ2msm6clMCkdW9"
 SUB_MARGIN_V = 440   # bottom of the last subtitle line (px from bottom)
-SUB_LINE_STEP = 112  # distance between subtitle lines (font 62px -> ~1.8x spacing)
+SUB_LINE_STEP = 106  # distance between Chinese subtitle lines (font 56px -> ~1.8x spacing)
+EN_LINE_STEP = 66    # distance between English subtitle lines (font 38px)
+EN_GAP = 34          # extra space between the English block and the Chinese block
 
 
 # ---------------------------------------------------------------- TTS
@@ -115,11 +117,14 @@ def trim(y, thr=0.01):
 
 
 def pause_after(line):
+    if line.endswith(("，", "：")):
+        return 0.35  # continuation of a sentence split for subtitles
     return 0.85 if line.endswith(("。", "？", "！", "嗎？")) else 0.6
 
 
-def narrate(ep, lines, tts):
-    """Return (voice track, [(start, end, text), ...])."""
+def narrate(ep, pairs, tts):
+    """Return (voice track, [(start, end, zh, en), ...])."""
+    lines = [zh for zh, _ in pairs]
     for ext in ("wav", "mp3", "m4a"):
         rec = HERE / "voice" / f"ep{ep:02d}.{ext}"
         if rec.exists():
@@ -129,14 +134,14 @@ def narrate(ep, lines, tts):
             dur = len(y) / SR
             weights = np.array([len(l) + 4 for l in lines], float)
             bounds = np.concatenate([[0], np.cumsum(weights / weights.sum() * dur)]) + LEAD_IN
-            return voice, [(bounds[i], bounds[i + 1] - 0.1, l) for i, l in enumerate(lines)]
+            return voice, [(bounds[i], bounds[i + 1] - 0.1, l, en) for i, (l, en) in enumerate(pairs)]
 
     segs, cues, t = [np.zeros(int(LEAD_IN * SR), np.float32)], [], LEAD_IN
     for i, line in enumerate(lines):
         y = trim(tts(line, lines[i - 1] if i else "", lines[i + 1] if i + 1 < len(lines) else ""))
         y = y / (np.max(np.abs(y)) + 1e-9) * 0.8
         d = len(y) / SR
-        cues.append((t, t + d + 0.25, line))
+        cues.append((t, t + d + 0.25, line, pairs[i][1]))
         gap = pause_after(line)
         segs += [y, np.zeros(int(gap * SR), np.float32)]
         t += d + gap
@@ -160,31 +165,36 @@ def mix(voice, ep):
 
 
 # ---------------------------------------------------------------- subtitles
-def wrap(text, width=13):
-    """Wrap Chinese text into lines of <= width chars, preferring punctuation."""
-    out, cur = [], ""
-    for ch in text:
-        cur += ch
-        if len(cur) >= width:
-            # break after the last punctuation if it's reasonably far in
-            cut = max(cur.rfind(p) for p in "，：；、")
-            if cut >= width // 2 and cut < len(cur) - 1:
-                out.append(cur[: cut + 1])
-                cur = cur[cut + 1:]
-            else:
-                out.append(cur)
-                cur = ""
-    if cur:
-        if out and len(cur) <= 2:
-            out[-1] += cur
+def wrap(text, width=15, stretch=17):
+    """Wrap Chinese text, breaking after punctuation whenever possible.
+
+    A line may stretch to `stretch` chars to end on punctuation; otherwise
+    it is hard-cut at `width`.
+    """
+    out, rest = [], text
+    while len(rest) > width:
+        cuts = [i + 1 for i, ch in enumerate(rest[:stretch]) if ch in "，、：；。？！"]
+        cuts = [c for c in cuts if c < len(rest)]
+        cut = max(cuts) if cuts else width
+        out.append(rest[:cut])
+        rest = rest[cut:]
+    if rest:
+        if out and len(rest) <= 2:
+            out[-1] += rest
         else:
-            out.append(cur)
-    # never start a line with closing punctuation
-    for i in range(1, len(out)):
-        while out[i] and out[i][0] in "，。？！：；、」":
-            out[i - 1] += out[i][0]
-            out[i] = out[i][1:]
-    return [l for l in out if l]
+            out.append(rest)
+    return out
+
+
+def wrap_en(text, width=46):
+    """Wrap English into the fewest lines, with line lengths balanced."""
+    import textwrap
+    n = len(textwrap.wrap(text, width))
+    for w in range(20, width + 1):
+        lines = textwrap.wrap(text, w)
+        if len(lines) == n:
+            return lines
+    return [text]
 
 
 def ts(sec):
@@ -202,18 +212,25 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,WenQuanYi Zen Hei,62,&H00243040,&H00243040,&H30E6F2F8,&H00000000,0,0,0,0,100,100,2,0,3,16,0,2,70,70,440,1
+Style: Sub,WenQuanYi Zen Hei,56,&H00243040,&H00243040,&H30E6F2F8,&H00000000,0,0,0,0,100,100,1,0,3,16,0,2,40,40,440,1
+Style: En,Bitstream Charter,38,&H00304A5C,&H00304A5C,&H30E6F2F8,&H00000000,0,1,0,0,100,100,0.5,0,3,12,0,2,70,70,440,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     rows = []
-    for s, e, text in cues:
+    for s, e, text, en in cues:
         # ASS has no line-spacing control, so each wrapped line is its own
         # event stacked upward from the bottom margin with a roomy gap.
+        # English sits at the bottom, Chinese stacked above it.
+        en_lines = wrap_en(en)
+        for k, line in enumerate(en_lines):
+            mv = SUB_MARGIN_V + (len(en_lines) - 1 - k) * EN_LINE_STEP
+            rows.append(f"Dialogue: 0,{ts(s)},{ts(e)},En,,0,0,{mv},,{{\\fad(180,180)}}{line}")
+        base = SUB_MARGIN_V + len(en_lines) * EN_LINE_STEP + EN_GAP
         lines = wrap(text)
         for k, line in enumerate(lines):
-            mv = SUB_MARGIN_V + (len(lines) - 1 - k) * SUB_LINE_STEP
+            mv = base + (len(lines) - 1 - k) * SUB_LINE_STEP
             rows.append(f"Dialogue: 0,{ts(s)},{ts(e)},Sub,,0,0,{mv},,{{\\fad(180,180)}}{line}")
     path.write_text(head + "\n".join(rows) + "\n", encoding="utf-8")
 
@@ -252,7 +269,7 @@ def to_srt(cues):
     def t(sec):
         ms = int(round(sec * 1000))
         return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
-    return "\n".join(f"{i}\n{t(s)} --> {t(e)}\n{text}\n" for i, (s, e, text) in enumerate(cues, 1))
+    return "\n".join(f"{i}\n{t(s)} --> {t(e)}\n{text}\n{en}\n" for i, (s, e, text, en) in enumerate(cues, 1))
 
 
 def main():
