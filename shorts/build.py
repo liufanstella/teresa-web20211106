@@ -126,7 +126,9 @@ class CloneTTS:
         self.gc.speed = 1.0
 
     def __call__(self, text, prev="", nxt=""):
-        a = self.tts.generate(text, self.gc)
+        # The model has no tokens for CJK/curly quotes; drop them.
+        spoken = text.translate({ord(c): None for c in "「」『』“”\""})
+        a = self.tts.generate(spoken, self.gc)
         with tempfile.NamedTemporaryFile(suffix=".wav") as f:
             sf.write(f.name, np.asarray(a.samples, dtype=np.float32), a.sample_rate)
             return decode(f.name)
