@@ -8,6 +8,10 @@ Usage:
 Narration voice:
   * If ELEVENLABS_API_KEY is set, the ElevenLabs "Jessica" voice is used
     (model eleven_multilingual_v2). Override with ELEVENLABS_VOICE_ID.
+  * Otherwise, if voice/reference.wav (+ reference.txt transcript) exists,
+    the narrator's voice is cloned from it offline (sherpa-onnx ZipVoice;
+    TTS_MODEL_DIR must hold sherpa-onnx-zipvoice-distill-int8-zh-en-emilia/
+    and vocos_24khz.onnx).
   * Otherwise a local offline Mandarin female voice (sherpa-onnx,
     matcha-icefall-zh-baker) is used. Set TTS_MODEL_DIR to the folder that
     holds matcha-icefall-zh-baker/ and vocos.onnx.
@@ -98,11 +102,45 @@ class LocalTTS:
         return y
 
 
+class CloneTTS:
+    """Zero-shot voice cloning (sherpa-onnx ZipVoice) from a short reference
+    clip of the narrator (voice/reference.wav + its transcript reference.txt)."""
+
+    def __init__(self, model_dir, ref_wav, ref_text):
+        import sherpa_onnx
+        d = Path(model_dir)
+        m = d / "sherpa-onnx-zipvoice-distill-int8-zh-en-emilia"
+        cfg = sherpa_onnx.OfflineTtsConfig(model=sherpa_onnx.OfflineTtsModelConfig(
+            zipvoice=sherpa_onnx.OfflineTtsZipvoiceModelConfig(
+                tokens=str(m / "tokens.txt"), encoder=str(m / "encoder.int8.onnx"),
+                decoder=str(m / "decoder.int8.onnx"), vocoder=str(d / "vocos_24khz.onnx"),
+                data_dir=str(m / "espeak-ng-data"), lexicon=str(m / "lexicon.txt")),
+            num_threads=4))
+        self.tts = sherpa_onnx.OfflineTts(cfg)
+        self.gc = sherpa_onnx.GenerationConfig()
+        ref, sr = sf.read(str(ref_wav), dtype="float32")
+        self.gc.reference_audio = ref.tolist()
+        self.gc.reference_sample_rate = sr
+        self.gc.reference_text = Path(ref_text).read_text(encoding="utf-8").strip()
+        self.gc.num_steps = 4
+        self.gc.speed = 1.0
+
+    def __call__(self, text, prev="", nxt=""):
+        a = self.tts.generate(text, self.gc)
+        with tempfile.NamedTemporaryFile(suffix=".wav") as f:
+            sf.write(f.name, np.asarray(a.samples, dtype=np.float32), a.sample_rate)
+            return decode(f.name)
+
+
 def get_tts():
     key = os.environ.get("ELEVENLABS_API_KEY")
     if key:
         print("Voice: ElevenLabs Jessica")
         return ElevenLabsTTS(key)
+    ref = HERE / "voice" / "reference.wav"
+    if ref.exists():
+        print("Voice: cloned from voice/reference.wav (ZipVoice)")
+        return CloneTTS(os.environ.get("TTS_MODEL_DIR", HERE / "models"), ref, ref.with_suffix(".txt"))
     print("Voice: local offline Mandarin female (sherpa-onnx baker)")
     return LocalTTS(os.environ.get("TTS_MODEL_DIR", HERE / "models"))
 
