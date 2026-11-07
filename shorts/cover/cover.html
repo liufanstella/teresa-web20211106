@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>Cover</title>
+<link rel="stylesheet" href="fonts/noto-serif-tc/700.css">
+<link rel="stylesheet" href="fonts/noto-serif-tc/900.css">
+<link rel="stylesheet" href="fonts/lora/400.css">
+<style>
+  :root {
+    --paper: #f7ecdc;
+    --ink: #3a2a1f;
+    --red: #a63a28;
+    --accent: #c9864a;
+    --brush: #ecd3a8;
+    --gold: #e9b949;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--paper); }
+  #scene { position: absolute; inset: 0; }
+  .text { position: absolute; left: 76px; top: 108px; right: 60px; color: var(--ink);
+          font-family: 'Noto Serif TC', serif; }
+  .series { font-size: 66px; font-weight: 900; letter-spacing: 4px; }
+  .rule { width: 128px; height: 5px; background: var(--accent); margin: 18px 0 22px; border-radius: 3px; }
+  .ep { display: inline-block; font-size: 64px; font-weight: 900; padding: 6px 64px 10px;
+        margin-left: 100px; position: relative; isolation: isolate; }
+  .ep::before { content: ""; position: absolute; inset: 4px -6px 0 -6px; background: var(--brush);
+                border-radius: 40% 55% 45% 60% / 60% 40% 55% 45%; filter: url(#rough); opacity: .9; z-index: -1; }
+  .title { margin-top: 34px; font-size: 112px; line-height: 1.24; font-weight: 900; letter-spacing: 2px; }
+  .title em { font-style: normal; color: var(--red); }
+  .underline { width: 520px; height: 18px; margin: 10px 0 0 26px; }
+  .en { margin-top: 18px; font-family: 'Lora', serif; font-size: 37px; line-height: 1.38; color: #3d3027; }
+  .footer { position: absolute; left: 96px; bottom: 92px; padding-left: 26px; border-left: 5px solid var(--accent);
+            color: var(--ink); }
+  .footer .zh { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 54px; letter-spacing: 6px; }
+  .footer .enf { font-family: 'Lora', serif; font-size: 30px; margin-top: 4px; }
+  body.dark .footer { color: #f6ead8; }
+</style>
+</head>
+<body>
+<svg id="scene" width="1080" height="1920" viewBox="0 0 1080 1920"></svg>
+<div class="text">
+  <div class="series">遠離能量吸血鬼</div>
+  <div class="rule"></div>
+  <div class="ep" id="ep"></div>
+  <div class="title" id="title"></div>
+  <svg class="underline" viewBox="0 0 520 18" preserveAspectRatio="none">
+    <path d="M4 11 C 120 4, 300 6, 516 8 L 512 14 C 330 13, 140 15, 8 16 Z" fill="var(--gold)" opacity=".85"/>
+  </svg>
+  <div class="en" id="en"></div>
+</div>
+<div class="footer">
+  <div class="zh">奕凡靈性探索宇宙</div>
+  <div class="enf">I Fan Spiritual Exploration Universe</div>
+</div>
+<script>
+const P = Object.fromEntries(new URLSearchParams(location.search));
+const cfg = JSON.parse(P.cfg);
+document.getElementById('ep').textContent = `第${cfg.ep}集`;
+document.getElementById('title').innerHTML = cfg.lines
+  .map(l => l.replace(/\[(.+?)\]/g, '<em>$1</em>')).join('<br>');
+document.getElementById('en').innerHTML = cfg.en.join('<br>');
+
+// ---------------------------------------------------------------- scene
+let seed = cfg.ep * 9301 + 49297;
+const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+const R = (a, b) => a + (b - a) * rnd();
+const svg = document.getElementById('scene');
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs, parent = svg) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent.appendChild(e); return e;
+};
+const defs = el('defs', {});
+defs.innerHTML = `
+  <filter id="rough" x="-10%" y="-10%" width="120%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="3"/>
+    <feDisplacementMap in="SourceGraphic" scale="14"/>
+  </filter>
+  <filter id="wc" x="-10%" y="-10%" width="120%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="4" seed="${cfg.ep}" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="26" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="2.2"/>
+  </filter>
+  <filter id="soft"><feGaussianBlur stdDeviation="18"/></filter>
+  <filter id="paper" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="5"/>
+    <feColorMatrix values="0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.25  0 0 0 0.07 0"/>
+  </filter>
+  <linearGradient id="fadeTop" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#f7ecdc" stop-opacity="1"/>
+    <stop offset="1" stop-color="#f7ecdc" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="fadeBottom" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#f7ecdc" stop-opacity="0"/>
+    <stop offset=".55" stop-color="#f7ecdc" stop-opacity=".85"/>
+    <stop offset="1" stop-color="#f7ecdc" stop-opacity=".95"/>
+  </linearGradient>`;
+
+function grad(id, stops, vertical = true) {
+  const g = el('linearGradient', vertical ? { id, x1: 0, y1: 0, x2: 0, y2: 1 } : { id }, defs);
+  stops.forEach(([o, c, a = 1]) => el('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g));
+  return `url(#${id})`;
+}
+function ridge(y, amp, color, opacity = 1, freq = 1, filter = 'url(#wc)') {
+  let d = `M -40 1960 L -40 ${y}`;
+  const ph = R(0, 6);
+  for (let x = -40; x <= 1120; x += 20) {
+    const yy = y - amp * (0.55 * Math.sin(x / 260 * freq + ph) + 0.3 * Math.sin(x / 97 * freq + ph * 2)
+                        + 0.15 * Math.sin(x / 41 + ph * 3));
+    d += ` L ${x} ${yy.toFixed(1)}`;
+  }
+  d += ' L 1120 1960 Z';
+  return el('path', { d, fill: color, opacity, filter });
+}
+function sun(cx, cy, r, color, glow) {
+  el('circle', { cx, cy, r: r * 2.2, fill: glow, opacity: .35, filter: 'url(#soft)' });
+  el('circle', { cx, cy, r, fill: color, opacity: .9, filter: 'url(#rough)' });
+}
+function branch(x0, y0, x1, y1, leafColors, n = 26) {
+  el('path', { d: `M ${x0} ${y0} Q ${(x0 + x1) / 2 + 60} ${(y0 + y1) / 2 - 80} ${x1} ${y1}`,
+               stroke: '#8a6a48', 'stroke-width': 7, fill: 'none', opacity: .75, filter: 'url(#rough)' });
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    const x = x0 + (x1 - x0) * t + R(-70, 70), y = y0 + (y1 - y0) * t + R(-60, 90);
+    const c = leafColors[i % leafColors.length];
+    el('ellipse', { cx: x, cy: y, rx: R(26, 40), ry: R(12, 18), fill: c, opacity: R(.7, .95),
+                    transform: `rotate(${R(-70, 70)} ${x} ${y})`, filter: 'url(#rough)' });
+  }
+}
+function flowers(n, y0, y1, colors, size = [6, 12]) {
+  for (let i = 0; i < n; i++) {
+    const x = R(-20, 1100), y = R(y0, y1), s = R(...size) * (0.6 + (y - y0) / (y1 - y0));
+    const c = colors[i % colors.length];
+    for (let k = 0; k < 5; k++) {
+      const a = k / 5 * Math.PI * 2;
+      el('circle', { cx: x + Math.cos(a) * s, cy: y + Math.sin(a) * s, r: s * .8, fill: c, opacity: .9 });
+    }
+    el('circle', { cx: x, cy: y, r: s * .55, fill: '#e8b23c' });
+  }
+}
+function grass(n, y0, y1, color) {
+  for (let i = 0; i < n; i++) {
+    const x = R(-20, 1100), y = R(y0, y1), h = R(30, 90);
+    el('path', { d: `M ${x} ${y} q ${R(-14, 14)} ${-h / 2} ${R(-24, 24)} ${-h}`, stroke: color,
+                 'stroke-width': R(2, 4), fill: 'none', opacity: R(.4, .8) });
+  }
+}
+
+const scenes = {
+  lake() {
+    el('rect', { x: 0, y: 0, width: 1080, height: 1920, fill: grad('sky', [[0, '#f7ecdc'], [.45, '#f3e6d4'], [.62, '#dfe6e8'], [1, '#c9dbe2']]) });
+    sun(820, 1060, 70, '#f4b77c', '#f8cf9c');
+    ridge(1150, 70, '#a9bfd0', .8, .8);
+    ridge(1230, 50, '#8eaac0', .85, 1.2);
+    el('rect', { x: -20, y: 1290, width: 1120, height: 330, fill: grad('lake', [[0, '#b8d0dc'], [1, '#d9e5e6']]), filter: 'url(#wc)' });
+    for (let i = 0; i < 14; i++) { const y = R(1310, 1580), x = R(0, 1000);
+      el('path', { d: `M ${x} ${y} h ${R(60, 180)}`, stroke: '#f6f1e6', 'stroke-width': 3, opacity: .7 }); }
+    ridge(1600, 26, '#9db58a', .95, 1.6);
+    grass(140, 1580, 1800, '#6f8f5a');
+    flowers(26, 1600, 1760, ['#ffffff', '#f6efe0']);
+    branch(1120, 60, 760, 330, ['#9fb87a', '#7f9d5f', '#b9cb8f']);
+  },
+  forest() {
+    el('rect', { x: 0, y: 0, width: 1080, height: 1920, fill: grad('sky', [[0, '#f7ecdc'], [.5, '#f1e8cf'], [1, '#dfe8cf']]) });
+    for (let i = 0; i < 6; i++) el('path', { d: `M ${880 - i * 40} -50 L ${300 + i * 120} 1900 L ${380 + i * 120} 1900 Z`,
+      fill: '#fff6dc', opacity: .16, filter: 'url(#soft)' });
+    const rows = [[1260, '#b9c9a2', .7], [1370, '#93ad7d', .85], [1500, '#6f8f5f', .9]];
+    rows.forEach(([y, c, o], r) => { for (let x = -60; x < 1140; x += R(70, 120)) {
+      const h = R(110, 200) * (1 + r * .25), w = h * .42;
+      el('path', { d: `M ${x} ${y - h} C ${x + w * .6} ${y - h * .5}, ${x + w} ${y}, ${x} ${y + 30} C ${x - w} ${y}, ${x - w * .6} ${y - h * .5}, ${x} ${y - h} Z`,
+                   fill: c, opacity: o, filter: 'url(#wc)' }); } });
+    ridge(1600, 30, '#8fae76', .95, 1.3);
+    grass(160, 1600, 1800, '#5d7e4b');
+    flowers(30, 1620, 1780, ['#ffffff', '#f3d36b']);
+    branch(1120, 40, 740, 360, ['#a7c06f', '#86a85a', '#c4d48e'], 30);
+  },
+  meadow() {
+    el('rect', { x: 0, y: 0, width: 1080, height: 1920, fill: grad('sky', [[0, '#f7ecdc'], [.5, '#f6e6cf'], [.7, '#e7ead8'], [1, '#dbe6c8']]) });
+    sun(240, 1080, 64, '#f6c27f', '#fadba8');
+    ridge(1200, 60, '#b7c9b4', .75, .7);
+    ridge(1320, 70, '#a7c08a', .9, .9);
+    ridge(1460, 60, '#8fb070', .95, 1.1);
+    grass(220, 1480, 1800, '#5f8248');
+    flowers(70, 1470, 1790, ['#ffffff', '#c9b6e4', '#f7d36c']);
+    branch(1120, 80, 780, 300, ['#b5c97f', '#93ad62', '#c9d99c']);
+  },
+  sea() {
+    el('rect', { x: 0, y: 0, width: 1080, height: 1920, fill: grad('sky', [[0, '#f7ecdc'], [.5, '#f6e3cc'], [.66, '#f1d7bd'], [1, '#e9d9c3']]) });
+    sun(540, 1250, 90, '#f2a86e', '#f7c99a');
+    el('rect', { x: -20, y: 1270, width: 1120, height: 420, fill: grad('sea', [[0, '#9fbfd0'], [1, '#cfdfe0']]), filter: 'url(#wc)' });
+    for (let i = 0; i < 22; i++) { const y = R(1290, 1660), x = R(-50, 1000);
+      el('path', { d: `M ${x} ${y} q 40 -10 80 0 t 80 0`, stroke: '#fbf3e6', 'stroke-width': 3, fill: 'none', opacity: .65 }); }
+    el('path', { d: 'M 470 1275 L 610 1275 L 650 1660 L 430 1660 Z', fill: '#f8d3a8', opacity: .35, filter: 'url(#soft)' });
+    ridge(1690, 30, '#e6d2b0', 1, 1.2);
+    grass(60, 1680, 1800, '#a59a6a');
+    branch(1120, 60, 800, 320, ['#a9bf86', '#8aa66b', '#c3d39d']);
+  },
+  dawn() {
+    el('rect', { x: 0, y: 0, width: 1080, height: 1920, fill: grad('sky', [[0, '#f7ecdc'], [.42, '#f8e1c4'], [.6, '#f6cfa6'], [1, '#e8c9a7']]) });
+    sun(700, 1150, 105, '#f6b26b', '#fbd7a0');
+    ridge(1190, 80, '#c8b5c7', .7, .7);
+    ridge(1280, 70, '#a99fb8', .8, .9);
+    ridge(1380, 60, '#8b97a8', .85, 1.1);
+    el('rect', { x: -20, y: 1340, width: 1120, height: 80, fill: '#fbefe0', opacity: .55, filter: 'url(#soft)' });
+    ridge(1520, 50, '#879c6e', .95, 1.3);
+    grass(160, 1520, 1800, '#5a7646');
+    flowers(36, 1540, 1780, ['#ffffff', '#f6d27a']);
+    branch(1120, 50, 760, 340, ['#a8bf75', '#88a55c', '#c8d68f']);
+  },
+  stars() {
+    el('rect', { x: 0, y: 0, width: 1080, height: 1920, fill: grad('sky', [[0, '#f7ecdc'], [.42, '#ecdccc'], [.55, '#b9b4c9'], [.75, '#7d7fa6'], [1, '#55597f']]) });
+    for (let i = 0; i < 90; i++) { const x = R(0, 1080), y = R(1080, 1560), r = R(1, 3.4);
+      el('circle', { cx: x, cy: y, r, fill: '#fff8e6', opacity: R(.5, 1) }); }
+    el('circle', { cx: 820, cy: 1120, r: 120, fill: '#fff3d6', opacity: .25, filter: 'url(#soft)' });
+    el('path', { d: 'M 860 1060 a 62 62 0 1 0 0 120 a 50 50 0 1 1 0 -120 Z', fill: '#fbefcf', opacity: .95 });
+    ridge(1480, 70, '#4b5276', .9, .8);
+    ridge(1580, 50, '#3e4565', .95, 1.2);
+    for (let i = 0; i < 40; i++) { const x = R(0, 1080), y = R(1560, 1760);
+      el('circle', { cx: x, cy: y, r: R(2, 5), fill: '#ffe39a', opacity: R(.5, .9), filter: 'url(#rough)' }); }
+    el('rect', { x: 0, y: 1660, width: 1080, height: 260, fill: grad('nb', [[0, '#3a405e', 0], [1, '#2f3450', .9]]) });
+    document.body.classList.add('dark');
+    branch(1120, 60, 780, 320, ['#a9b98a', '#8ea173', '#c2cf9f']);
+  },
+};
+scenes[cfg.scene]();
+// paper grain on top of everything, and fade the top so the title sits on paper
+el('rect', { x: 0, y: 0, width: 1080, height: 1920, filter: 'url(#paper)' });
+if (cfg.scene !== 'stars') el('rect', { x: 0, y: 1620, width: 1080, height: 300, fill: 'url(#fadeBottom)' });
+document.fonts.ready.then(() => document.body.dataset.ready = '1');
+</script>
+</body>
+</html>
