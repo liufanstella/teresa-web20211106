@@ -199,6 +199,7 @@ def narrate(ep, pairs, tts):
         if rec.exists():
             print(f"  using recording {rec.name}")
             y = decode(rec)
+            y = y / (np.max(np.abs(y)) + 1e-9) * 0.8
             voice = np.concatenate([np.zeros(int(LEAD_IN * SR), np.float32), y])
             spans = align_recording(y, lines)
             return voice, [(LEAD_IN + a, LEAD_IN + b + 0.25, l, en)
@@ -217,17 +218,45 @@ def narrate(ep, pairs, tts):
 
 
 # ---------------------------------------------------------------- mixing
+def load_bgm(ep, total):
+    """Use music/epNN.* or music/bgm.* if present: trimmed, looped if short,
+    with fade-in/out. Returns stereo float32 or None."""
+    for name in (f"ep{ep:02d}", "bgm"):
+        for f in sorted((HERE / "music").glob(name + ".*")):
+            raw = subprocess.run(
+                ["ffmpeg", "-loglevel", "error", "-i", str(f), "-map", "0:a:0", "-ac", "2",
+                 "-ar", str(SR), "-f", "f32le", "-"], check=True, capture_output=True).stdout
+            y = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2)
+            print(f"  music: {f.name}")
+            reps = int(np.ceil(total / len(y)))
+            y = np.tile(y, (reps, 1))[:total].copy()
+            n_in, n_out = int(1.5 * SR), int(3.5 * SR)
+            y[:n_in] *= np.linspace(0, 1, n_in)[:, None]
+            y[-n_out:] *= np.linspace(1, 0, n_out)[:, None] ** 2
+            return y
+    return None
+
+
 def mix(voice, ep):
     total = len(voice) + int(TAIL * SR)
     v = np.zeros(total, np.float32)
     v[: len(voice)] = voice
-    bgm = music.compose(total / SR, variant=ep - 1, seed=ep * 11)[:total]
-    # duck music under narration (smoothed voice envelope)
-    env = np.abs(v)
+    bgm = load_bgm(ep, total)
+    if bgm is None:
+        bgm = music.compose(total / SR, variant=ep - 1, seed=ep * 11)[:total]
+    if len(bgm) < total:  # guard against off-by-one from float rounding
+        bgm = np.pad(bgm, ((0, total - len(bgm)), (0, 0)))
+    # match loudness of supplied tracks to the synthesized default
+    bgm = bgm / (np.sqrt(np.mean(bgm ** 2)) + 1e-9) * 0.2
+    # duck music under narration (smoothed voice envelope, moving average)
     k = int(0.4 * SR)
-    env = np.convolve(env, np.ones(k) / k, mode="same")
+    c = np.concatenate([[0], np.cumsum(np.abs(v), dtype=np.float64)])
+    env = np.empty(total)
+    lo = np.clip(np.arange(total) - k // 2, 0, total)
+    hi = np.clip(np.arange(total) + k // 2, 0, total)
+    env[:] = (c[hi] - c[lo]) / k
     active = np.clip(env / 0.05, 0, 1)
-    gain = 0.30 - 0.14 * active  # ~-10 dB alone, ~-16 dB under voice
+    gain = 0.20 - 0.12 * active  # music ~-9 dB vs speech when alone, ~-17 dB under voice
     out = bgm * gain[:, None] + v[:, None] * 0.95
     return out.astype(np.float32)
 
