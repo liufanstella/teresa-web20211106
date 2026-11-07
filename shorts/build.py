@@ -122,6 +122,75 @@ def pause_after(line):
     return 0.85 if line.endswith(("。", "？", "！", "嗎？")) else 0.6
 
 
+def find_pauses(y, thr_db=-38, min_len=0.12):
+    """Return [(start, end)] of silent stretches in a mono SR signal."""
+    hop = int(0.01 * SR)
+    frames = len(y) // hop
+    rms = np.sqrt(np.mean(y[: frames * hop].reshape(frames, hop) ** 2, axis=1) + 1e-12)
+    quiet = 20 * np.log10(rms) < thr_db
+    out, start = [], None
+    for i, q in enumerate(np.append(quiet, False)):
+        if q and start is None:
+            start = i
+        elif not q and start is not None:
+            if (i - start) * 0.01 >= min_len:
+                out.append((start * 0.01, i * 0.01))
+            start = None
+    return out
+
+
+def align_recording(y, lines):
+    """Map script lines onto a recording: pick one pause per line boundary
+    (dynamic programming) so each line's duration best matches its length,
+    favouring long pauses. Returns [(start, end)] in seconds."""
+    total = len(y) / SR
+    pauses = find_pauses(y)
+    speech_start = pauses[0][1] if pauses and pauses[0][0] < 0.05 else 0.0
+    speech_end = pauses[-1][0] if pauses and pauses[-1][1] > total - 0.05 else total
+    inner = [p for p in pauses if speech_start < p[0] and p[1] < speech_end]
+    n, m = len(lines), len(inner)
+    if m < n - 1:  # not enough pauses: fall back to proportional split
+        w = np.array([len(l) for l in lines], float)
+        b = speech_start + np.concatenate([[0], np.cumsum(w / w.sum())]) * (speech_end - speech_start)
+        return [(b[i], b[i + 1] - 0.1) for i in range(n)]
+    chars = np.array([len(l) for l in lines], float)
+    rate = (speech_end - speech_start) / chars.sum()
+    # node k: boundary at inner pause k (k = -1 is speech start, m is speech end)
+    def pos_end(k):
+        return speech_end if k == m else inner[k][0]
+
+    def pos_start(k):
+        return speech_start if k == -1 else inner[k][1]
+
+    def cost(i, a, b):
+        dur = pos_end(b) - pos_start(a)
+        exp = chars[i] * rate
+        c = (dur - exp) ** 2 / exp
+        if b < m:
+            c -= 4.0 * (inner[b][1] - inner[b][0])  # prefer long pauses
+        return c
+
+    INF = float("inf")
+    best = {(-1, 0): (0.0, None)}  # (boundary idx, lines done) -> (cost, prev)
+    for i in range(n):
+        last = i == n - 1
+        for (a, done), (c0, _) in list(best.items()):
+            if done != i:
+                continue
+            targets = [m] if last else range(a + 1, m)
+            for b in targets:
+                c = c0 + cost(i, a, b)
+                key = (b, i + 1)
+                if c < best.get(key, (INF, None))[0]:
+                    best[key] = (c, (a, done))
+    key, path = (m, n), []
+    while key[1] > 0:
+        prev = best[key][1]
+        path.append((pos_start(prev[0]), pos_end(key[0])))
+        key = prev
+    return path[::-1]
+
+
 def narrate(ep, pairs, tts):
     """Return (voice track, [(start, end, zh, en), ...])."""
     lines = [zh for zh, _ in pairs]
@@ -131,10 +200,9 @@ def narrate(ep, pairs, tts):
             print(f"  using recording {rec.name}")
             y = decode(rec)
             voice = np.concatenate([np.zeros(int(LEAD_IN * SR), np.float32), y])
-            dur = len(y) / SR
-            weights = np.array([len(l) + 4 for l in lines], float)
-            bounds = np.concatenate([[0], np.cumsum(weights / weights.sum() * dur)]) + LEAD_IN
-            return voice, [(bounds[i], bounds[i + 1] - 0.1, l, en) for i, (l, en) in enumerate(pairs)]
+            spans = align_recording(y, lines)
+            return voice, [(LEAD_IN + a, LEAD_IN + b + 0.25, l, en)
+                           for (a, b), (l, en) in zip(spans, pairs)]
 
     segs, cues, t = [np.zeros(int(LEAD_IN * SR), np.float32)], [], LEAD_IN
     for i, line in enumerate(lines):
@@ -278,8 +346,12 @@ def main():
     for ep in eps:
         info = EPISODES[ep]
         print(f"第{ep}集 {info['title']}")
-        voice, cues = narrate(ep, info["lines"], tts)
-        render(ep, info, mix(voice, ep), cues)
+        # Each short opens with the episode title read aloud. The cover image
+        # already shows it, so that cue gets no subtitle.
+        num = "一二三四五六七八九十"[ep - 1]
+        intro = (f"第{num}集。" + info["title"].rstrip("？") + ("？" if info["title"].endswith("？") else "。"), "")
+        voice, cues = narrate(ep, [intro] + info["lines"], tts)
+        render(ep, info, mix(voice, ep), cues[1:])
 
 
 if __name__ == "__main__":
