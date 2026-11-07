@@ -35,6 +35,8 @@ SR = 44100
 W, H, FPS = 1080, 1920, 30
 LEAD_IN, TAIL = 0.8, 2.2
 JESSICA = "cgSgspJ2msm6clMCkdW9"
+SUB_MARGIN_V = 440   # bottom of the last subtitle line (px from bottom)
+SUB_LINE_STEP = 112  # distance between subtitle lines (font 62px -> ~1.8x spacing)
 
 
 # ---------------------------------------------------------------- TTS
@@ -200,15 +202,19 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,WenQuanYi Zen Hei,62,&H00243040,&H00243040,&H30E6F2F8,&H00000000,0,0,0,0,100,100,2,0,3,22,0,2,70,70,470,1
+Style: Sub,WenQuanYi Zen Hei,62,&H00243040,&H00243040,&H30E6F2F8,&H00000000,0,0,0,0,100,100,2,0,3,16,0,2,70,70,440,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     rows = []
     for s, e, text in cues:
-        body = r"\N".join(wrap(text))
-        rows.append(f"Dialogue: 0,{ts(s)},{ts(e)},Sub,,0,0,0,,{{\\fad(180,180)}}{body}")
+        # ASS has no line-spacing control, so each wrapped line is its own
+        # event stacked upward from the bottom margin with a roomy gap.
+        lines = wrap(text)
+        for k, line in enumerate(lines):
+            mv = SUB_MARGIN_V + (len(lines) - 1 - k) * SUB_LINE_STEP
+            rows.append(f"Dialogue: 0,{ts(s)},{ts(e)},Sub,,0,0,{mv},,{{\\fad(180,180)}}{line}")
     path.write_text(head + "\n".join(rows) + "\n", encoding="utf-8")
 
 
