@@ -20,6 +20,7 @@ Narration voice:
     character count.
 """
 import json
+import re
 import os
 import subprocess
 import sys
@@ -102,6 +103,15 @@ class LocalTTS:
         return y
 
 
+def zh_num(n):
+    """1..99 -> Chinese numerals (e.g. 10 -> 十, 25 -> 二十五)."""
+    d = "零一二三四五六七八九"
+    if n < 10:
+        return d[n]
+    tens, ones = divmod(n, 10)
+    return ("" if tens == 1 else d[tens]) + "十" + (d[ones] if ones else "")
+
+
 class CloneTTS:
     """Zero-shot voice cloning (sherpa-onnx ZipVoice) from a short reference
     clip of the narrator (voice/reference.wav + its transcript reference.txt)."""
@@ -128,6 +138,7 @@ class CloneTTS:
     def __call__(self, text, prev="", nxt=""):
         # The model has no tokens for CJK/curly quotes; drop them.
         spoken = text.translate({ord(c): None for c in "「」『』“”\""})
+        spoken = re.sub(r"\d{1,2}", lambda m: zh_num(int(m.group())), spoken)
         a = self.tts.generate(spoken, self.gc)
         with tempfile.NamedTemporaryFile(suffix=".wav") as f:
             sf.write(f.name, np.asarray(a.samples, dtype=np.float32), a.sample_rate)
